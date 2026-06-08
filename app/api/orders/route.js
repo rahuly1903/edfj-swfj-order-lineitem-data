@@ -66,10 +66,112 @@ async function fetchAllOrders(store, startDate, endDate) {
   return orders;
 }
 
+function findFulfillmentForLineItem(order, lineItemId) {
+  for (const fulfillment of order.fulfillments || []) {
+    const matched = fulfillment.line_items?.find((item) => item.id === lineItemId);
+    if (matched) {
+      return fulfillment;
+    }
+  }
+  return null;
+}
+
+function buildOrderRow(order, lineItem, fulfillment, exportWithLineItemProperties) {
+  return {
+    Name: order.name,
+    Email: order.email,
+    "Financial Status": order.financial_status,
+    "Paid at": order.processed_at,
+    "Fulfillment Status": order.fulfillment_status,
+    "Fulfilled at": fulfillment?.created_at ?? "",
+    Currency: order.currency,
+    Subtotal: order.subtotal_price,
+    Shipping:
+      order.shipping_lines?.reduce(
+        (sum, ship) => sum + parseFloat(ship.price || 0),
+        0
+      ) ?? 0,
+    Taxes: order.total_tax ?? 0,
+    Total: order.total_price,
+    "Discount Amount": order.total_discounts ?? 0,
+    "Order Created at": order.created_at,
+    "Lineitem quantity": lineItem.quantity,
+    "Lineitem name": lineItem.name,
+    "Lineitem price": lineItem.price,
+    "Lineitem sku": lineItem.sku ?? "",
+    ...(exportWithLineItemProperties && {
+      "Ring Size": getRingSize(lineItem),
+    }),
+    "Lineitem fulfillment status":
+      lineItem.fulfillment_status ?? "unfulfilled",
+    "Fulfilled date": fulfillment?.created_at ?? "",
+    "Delivery data": fulfillment?.updated_at ?? "",
+    "Shipping Staus": "",
+    "Tracking No": fulfillment?.tracking_number ?? "",
+    "Shipping Name": order.shipping_address?.name ?? "",
+    "Shipping Street": order.shipping_address?.address1 ?? "",
+    "Shipping Address1": order.shipping_address?.address1 ?? "",
+    "Shipping Address2": order.shipping_address?.address2 ?? "",
+    "Shipping Company": order.shipping_address?.company ?? "",
+    "Shipping City": order.shipping_address?.city ?? "",
+    "Shipping Zip": order.shipping_address?.zip ?? "",
+    "Shipping Province": order.shipping_address?.province ?? "",
+    "Shipping Country": order.shipping_address?.country ?? "",
+    "Shipping Phone": order.shipping_address?.phone ?? "",
+    "Payment Method": order.payment_gateway_names?.join(", ") ?? "",
+    Tags: order.tags ?? "",
+    "Risk Level": order.risk_level ?? "",
+    Source: order.source_name ?? "",
+    "Lineitem discount": lineItem.total_discount ?? "",
+  };
+}
+
+function buildExportRows(orders, lineItemExportMode, exportWithLineItemProperties) {
+  const rows = [];
+
+  orders.forEach((order) => {
+    if (lineItemExportMode === "all") {
+      (order.line_items || []).forEach((lineItem) => {
+        const fulfillment = findFulfillmentForLineItem(order, lineItem.id);
+        rows.push(
+          buildOrderRow(
+            order,
+            lineItem,
+            fulfillment,
+            exportWithLineItemProperties
+          )
+        );
+      });
+      return;
+    }
+
+    (order.fulfillments || []).forEach((fulfillment) => {
+      fulfillment.line_items.forEach((lineItem) => {
+        rows.push(
+          buildOrderRow(
+            order,
+            lineItem,
+            fulfillment,
+            exportWithLineItemProperties
+          )
+        );
+      });
+    });
+  });
+
+  return rows;
+}
+
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { store, startDate, endDate, exportWithLineItemProperties } = body;
+    const {
+      store,
+      startDate,
+      endDate,
+      exportWithLineItemProperties,
+      lineItemExportMode = "fulfilled",
+    } = body;
 
     if (!store || !startDate || !endDate) {
       return NextResponse.json(
@@ -87,78 +189,22 @@ export async function POST(request) {
       );
     }
 
-    const allOrdersData = [];
-    const fulfilledOrdersData = [];
+    const exportRows = buildExportRows(
+      orders,
+      lineItemExportMode,
+      exportWithLineItemProperties
+    );
 
-    orders.forEach((order) => {
-      order.fulfillments?.forEach((fulfillment) => {
-        fulfillment.line_items.forEach((lineItem) => {
-          const row = {
-            Name: order.name,
-            Email: order.email,
-            "Financial Status": order.financial_status,
-            "Paid at": order.processed_at,
-            "Fulfillment Status": order.fulfillment_status,
-            "Fulfilled at": fulfillment?.created_at ?? "",
-            Currency: order.currency,
-            Subtotal: order.subtotal_price,
-            Shipping:
-              order.shipping_lines?.reduce(
-                (sum, ship) => sum + parseFloat(ship.price || 0),
-                0
-              ) ?? 0,
-            Taxes: order.total_tax ?? 0,
-            Total: order.total_price,
-            "Discount Amount": order.total_discounts ?? 0,
-            "Order Created at": order.created_at,
-            "Lineitem quantity": lineItem.quantity,
-            "Lineitem name": lineItem.name,
-            "Lineitem price": lineItem.price,
-            "Lineitem sku": lineItem.sku ?? "",
-            ...(exportWithLineItemProperties && {
-              "Ring Size": getRingSize(lineItem),
-            }),
-            "Lineitem fulfillment status":
-              lineItem.fulfillment_status ?? "unfulfilled",
-            "Fulfilled date": fulfillment.created_at,
-            "Delivery data": fulfillment?.updated_at ?? "",
-            "Shipping Staus": "",
-            "Tracking No": fulfillment.tracking_number ?? "",
-            "Shipping Name": order.shipping_address?.name ?? "",
-            "Shipping Street": order.shipping_address?.address1 ?? "",
-            "Shipping Address1": order.shipping_address?.address1 ?? "",
-            "Shipping Address2": order.shipping_address?.address2 ?? "",
-            "Shipping Company": order.shipping_address?.company ?? "",
-            "Shipping City": order.shipping_address?.city ?? "",
-            "Shipping Zip": order.shipping_address?.zip ?? "",
-            "Shipping Province": order.shipping_address?.province ?? "",
-            "Shipping Country": order.shipping_address?.country ?? "",
-            "Shipping Phone": order.shipping_address?.phone ?? "",
-            "Payment Method":
-              order.payment_gateway_names?.join(", ") ?? "",
-            Tags: order.tags ?? "",
-            "Risk Level": order.risk_level ?? "",
-            Source: order.source_name ?? "",
-            "Lineitem discount": lineItem.total_discount ?? "",
-          };
-
-          allOrdersData.push(row);
-          if (order.fulfillment_status === "fulfilled") {
-            fulfilledOrdersData.push(row);
-          }
-        });
-      });
-    });
-
-    if (allOrdersData.length === 0) {
-      return NextResponse.json(
-        { message: "No order/fulfillment data to export" },
-        { status: 404 }
-      );
+    if (exportRows.length === 0) {
+      const message =
+        lineItemExportMode === "all"
+          ? "No order line items to export"
+          : "No fulfilled line items to export";
+      return NextResponse.json({ message }, { status: 404 });
     }
 
-    const parser = new Parser({ fields: Object.keys(allOrdersData[0]) });
-    const csv = parser.parse(allOrdersData);
+    const parser = new Parser({ fields: Object.keys(exportRows[0]) });
+    const csv = parser.parse(exportRows);
 
     return new NextResponse(csv, {
       status: 200,

@@ -21,6 +21,7 @@ export default function OrderExport() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [exportWithProperties, setExportWithProperties] = useState(false);
+  const [lineItemExportMode, setLineItemExportMode] = useState("fulfilled");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -50,7 +51,13 @@ export default function OrderExport() {
     setLoading(true);
     setError("");
 
-    const payload = { store, startDate, endDate, exportWithLineItemProperties: exportWithProperties };
+    const payload = {
+      store,
+      startDate,
+      endDate,
+      exportWithLineItemProperties: exportWithProperties,
+      lineItemExportMode,
+    };
 
     try {
       const response = await axios.post("/api/orders", payload, {
@@ -178,6 +185,30 @@ export default function OrderExport() {
               disabled={loading}
             />
             &nbsp;Export order with line item properties
+          </label>
+        </div>
+
+        <div className="input-group input-group-checkbox">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={lineItemExportMode === "all"}
+              onChange={() => setLineItemExportMode("all")}
+              disabled={loading}
+            />
+            &nbsp;Export all line items (fulfilled or not)
+          </label>
+        </div>
+
+        <div className="input-group input-group-checkbox">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={lineItemExportMode === "fulfilled"}
+              onChange={() => setLineItemExportMode("fulfilled")}
+              disabled={loading}
+            />
+            &nbsp;Export only fulfilled line items
           </label>
         </div>
 
